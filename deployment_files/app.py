@@ -1,93 +1,86 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-from pymongo import MongoClient
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 from datetime import datetime
 
-cluster = MongoClient("mongodb+srv://jai:jai@cluster0.ax3qe.mongodb.net/myFirstDatabase?retryWrites=true&w=majority")
-db = cluster["bakery"]
+
+uri = "mongodb+srv://kedarimahesh:F5CjYo9u0Z7a4ipI@shorelinecluster.pudipmm.mongodb.net/?retryWrites=true&w=majority"
+# Create a new client and connect to server
+print(f"connecting to {uri}")
+cluster = MongoClient(uri)
+try:
+    print("Pinging to mongo server")
+    cluster.admin.command('ping')
+    print("Pinged your deployment. You successfully connected to MongoDB!")
+except Exception as e:
+    print("Printing exception")
+    print(e)
+
+db = cluster["shorelinecloud"]
 users = db["users"]
 orders = db["orders"]
 
 app = Flask(__name__)
 
-
-@app.route("/", methods=["get", "post"])
-def reply():
+@app.route("/", methods=["GET", "POST"])
+def respond_to_alarm():
     text = request.form.get("Body")
     number = request.form.get("From")
     number = number.replace("whatsapp:", "")[:-2]
-    res = MessagingResponse()
+    print(f"Request received from user {number}")
     user = users.find_one({"number": number})
-    if bool(user) == False:
-        msg = res.message("Hi, thanks for contacting *The Red Velvet*.\nYou can choose from one of the options below: "
-                    "\n\n*Type*\n\n 1️⃣ To *contact* us \n 2️⃣ To *order* snacks \n 3️⃣ To know our *working hours* \n 4️⃣ "
-                    "To get our *address*")
-        msg.media("https://i.ibb.co/BPKnXVP/Red-Velvet-Cake-Waldorf-Astoria.jpg")
-        users.insert_one({"number": number, "status": "main", "messages": []})
-    elif user["status"] == "main":
-        try:
-            option = int(text)
-        except:
-            res.message("Please enter a valid response")
-            return str(res)
+    response = MessagingResponse()
+    try:
+        if bool(user) == False:
+            msg = response.message("Hi, Thanks for connecting *Shoreline IoT* \n "
+                            "Monitor your assets with our advanced Prescriptive maintainance servce. \n"
+                            "To get started *type*\n"
+                            "1️⃣ To *List your sites* \n"
+                            "2️⃣ To *List your devices* \n" 
+                            "3️⃣ To get *Vibration workflow* \n"
+                            "4️⃣ To get *Asset Image* \n"
+                            )
+            msg.media("https://static.wixstatic.com/media/9dae82_a009238d26164b1193c51903d19e5a7e~mv2.png")
+            users.insert_one({"number":number, "status": "first_visit", "messages": []})
+        elif user["status"] == "first_visit":
+            try:
+                option = int(text)
+            except:
+                response.message("Please enter a valid response")
+                return str(response)
 
-        if option == 1:
-            res.message(
-                "You can contact us through phone or e-mail.\n\n*Phone*: 991234 56789 \n*E-mail* : contact@theredvelvet.io")
-        elif option == 2:
-            res.message("You have entered *ordering mode*.")
-            users.update_one(
-                {"number": number}, {"$set": {"status": "ordering"}})
-            res.message(
-                "You can select one of the following cakes to order: \n\n1️⃣ Red Velvet  \n2️⃣ Dark Forest \n3️⃣ Ice Cream Cake"
-                "\n4️⃣ Plum Cake \n5️⃣ Sponge Cake \n6️⃣ Genoise Cake \n7️⃣ Angel Cake \n8️⃣ Carrot Cake \n9️⃣ Fruit Cake  \n0️⃣ Go Back")
-        elif option == 3:
-            res.message("We work from *9 a.m. to 5 p.m*.")
-
-        elif option == 4:
-            res.message(
-                "We have multiple stores across the city. Our main center is at *4/54, New Delhi*")
-        else:
-            res.message("Please enter a valid response")
-    elif user["status"] == "ordering":
-        try:
-            option = int(text)
-        except:
-            res.message("Please enter a valid response")
-            return str(res)
-        if option == 0:
-            users.update_one(
-                {"number": number}, {"$set": {"status": "main"}})
-            res.message("You can choose from one of the options below: "
-                        "\n\n*Type*\n\n 1️⃣ To *contact* us \n 2️⃣ To *order* snacks \n 3️⃣ To know our *working hours* \n 4️⃣ "
-                        "To get our *address*")
-        elif 1 <= option <= 9:
-            cakes = ["Red Velvet Cake", "Dark Forest Cake", "Ice Cream Cake",
-                     "Plum Cake", "Sponge Cake", "Genoise Cake", "Angel Cake", "Carrot Cake", "Fruit Cake"]
-            selected = cakes[option - 1]
-            users.update_one(
-                {"number": number}, {"$set": {"status": "address"}})
-            users.update_one(
-                {"number": number}, {"$set": {"item": selected}})
-            res.message("Excellent choice 😉")
-            res.message("Please enter your address to confirm the order")
-        else:
-            res.message("Please enter a valid response")
-    elif user["status"] == "address":
-        selected = user["item"]
-        res.message("Thanks for shopping with us 😊")
-        res.message(f"Your order for *{selected}* has been received and will be delivered within an hour")
-        orders.insert_one({"number": number, "item": selected, "address": text, "order_time": datetime.now()})
-        users.update_one(
-            {"number": number}, {"$set": {"status": "ordered"}})
-    elif user["status"] == "ordered":
-        res.message("Hi, thanks for contacting again.\nYou can choose from one of the options below: "
-                    "\n\n*Type*\n\n 1️⃣ To *contact* us \n 2️⃣ To *order* snacks \n 3️⃣ To know our *working hours* \n 4️⃣ "
-                    "To get our *address*")
-        users.update_one(
-            {"number": number}, {"$set": {"status": "main"}})
-    users.update_one({"number": number}, {"$push": {"messages": {"text": text, "date": datetime.now()}}})
-    return str(res)
+            if option == 1:
+                response.message("List your sites\n"
+                                 "1️⃣ DCP Midstream\n"
+                                 "2️⃣ GE Appliances\n"
+                                 "3️⃣ Microsoft Corporations\n"
+                                 "4️⃣ Amazon\n"
+                                 "5️⃣ Google\n"
+                                 "6️⃣ Apple\n"
+                                 "7️⃣ LinkedIn\n"
+                                 "8️⃣ Facebook\n"
+                                 "9️⃣ Twitter\n"
+                                 "1️⃣0️⃣ Instagram\n"
+                                 )
+            elif option == 2:
+                response.message("List your sites\n"
+                                 "1️⃣ Compressor 1\n"
+                                 "2️⃣ Motor 2\n"
+                                 "3️⃣ Compressor 3\n"
+                                 "4️⃣ Engine 4\n"
+                                 )
+            elif option == 3:
+                msg = response.message("Vibration Analysis")
+                msg.media("https://cdn.shopify.com/s/files/1/0417/5439/4787/articles/IS9_2048x.jpg")
+            elif option == 4:
+                # https://www.sl-energie.com/files/template/img/engines/anwendungen/kompressorantrieb/q8-terminal/Q8T%20IMG_9601_ret.jpg
+                msg = response.message("Asset Image")
+                msg.media("https://www.sl-energie.com/files/template/img/engines/anwendungen/kompressorantrieb/q8-terminal/Q8T%20IMG_9601_ret.jpg")
+    except Exception as e:
+        print(e)
+        response.message("Error has occurred");
+    return str(response)
 
 
 if __name__ == "__main__":
